@@ -92,4 +92,3 @@ mod tests {
         assert_eq!(plan.mac_address(257).unwrap(), "02:fc:00:00:01:01");
     }
 }
-

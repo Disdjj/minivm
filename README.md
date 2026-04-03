@@ -14,8 +14,10 @@ This repository does **not** implement a full Firecracker-like VMM yet. The firs
 - `serve`: a small counter API with `/incr`, `/count`, and `/healthz`
 - `build-initramfs`: packages a BusyBox binary and the guest `/init` script into a Linux initramfs
 - `launch`: spawns `N` QEMU guests, allocates deterministic TAP/IP/MAC values, and waits for all guests to finish
+- `doctor`: validates the current host and configuration before launch
 - `guest/init`: the guest workload that configures `eth0`, calls the host API, and powers off
 - `scripts/linux_setup_bridge.sh`: helper for creating a host bridge used by the TAP interfaces
+- `minivm.toml.example`: example config file for storing shared defaults
 
 ## Host Requirements
 
@@ -37,13 +39,25 @@ The current development machine for this repo is macOS/arm64, so the repository 
 cargo build
 ```
 
-2. Create a bridge that the host API will listen on:
+2. Copy the example config if you want stable defaults:
+
+```bash
+cp minivm.toml.example minivm.toml
+```
+
+3. Run environment checks:
+
+```bash
+cargo run -- doctor
+```
+
+4. Create a bridge that the host API will listen on:
 
 ```bash
 sudo ./scripts/linux_setup_bridge.sh minivm0 192.168.100.1/24
 ```
 
-3. Build the initramfs:
+5. Build the initramfs:
 
 ```bash
 cargo run -- build-initramfs \
@@ -51,16 +65,16 @@ cargo run -- build-initramfs \
   --output out/initramfs.cpio
 ```
 
-4. Start the counter API:
+6. Start the counter API:
 
 ```bash
 cargo run -- serve --listen 192.168.100.1:8080
 ```
 
-5. Launch three guests:
+7. Launch three guests:
 
 ```bash
-sudo cargo run -- launch \
+sudo ./target/debug/minivm launch \
   --count 3 \
   --kernel /path/to/bzImage \
   --initramfs out/initramfs.cpio \
@@ -68,7 +82,7 @@ sudo cargo run -- launch \
   --host-api http://192.168.100.1:8080/incr
 ```
 
-6. Verify the host count:
+8. Verify the host count:
 
 ```bash
 curl http://192.168.100.1:8080/count
@@ -85,5 +99,5 @@ The expected result is:
 - Guests use one vCPU and a small amount of RAM because the only workload is a single HTTP request.
 - The initramfs is intentionally tiny. There is no root disk and no block device in this first cut.
 - TAP setup is done on the host so that each guest gets a normal `virtio-net` device connected to the bridge.
-- QEMU is wrapped behind a small launcher module. That keeps the orchestration logic reusable when we replace QEMU with a custom KVM-based backend later.
-
+- QEMU is wrapped behind a backend trait. That keeps the orchestration logic reusable when we replace QEMU with a custom KVM-based backend later.
+- Shared defaults can live in `minivm.toml`, while command-line flags still override them.

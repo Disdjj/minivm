@@ -1,5 +1,8 @@
+mod backend;
 mod cli;
+mod config;
 mod counter_api;
+mod doctor;
 mod guest;
 mod launcher;
 mod net;
@@ -30,4 +33,3 @@ async fn main() -> ExitCode {
         }
     }
 }
-

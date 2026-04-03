@@ -3,21 +3,24 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result};
+use axum::Router;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::get;
-use axum::Router;
 use tokio::net::TcpListener;
 use tracing::info;
 
-use crate::cli::ServeArgs;
+#[derive(Debug, Clone)]
+pub struct ServeConfig {
+    pub listen: SocketAddr,
+}
 
 #[derive(Clone)]
 struct AppState {
     count: Arc<AtomicU64>,
 }
 
-pub async fn serve(args: ServeArgs) -> Result<()> {
+pub async fn serve(config: ServeConfig) -> Result<()> {
     let state = AppState {
         count: Arc::new(AtomicU64::new(0)),
     };
@@ -28,9 +31,9 @@ pub async fn serve(args: ServeArgs) -> Result<()> {
         .route("/incr", get(incr))
         .with_state(state);
 
-    let listener = TcpListener::bind(args.listen)
+    let listener = TcpListener::bind(config.listen)
         .await
-        .with_context(|| format!("failed to bind counter API on {}", args.listen))?;
+        .with_context(|| format!("failed to bind counter API on {}", config.listen))?;
 
     info!("counter API listening on {}", listener.local_addr()?);
 

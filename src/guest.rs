@@ -8,7 +8,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail};
 use tracing::info;
 
-use crate::cli::BuildInitramfsArgs;
+#[derive(Debug, Clone)]
+pub struct BuildInitramfsConfig {
+    pub busybox: PathBuf,
+    pub output: PathBuf,
+    pub init_script: Option<PathBuf>,
+}
 
 static DEFAULT_INIT_SCRIPT: &str = include_str!("../guest/init");
 
@@ -16,12 +21,12 @@ pub fn default_init_script() -> &'static str {
     DEFAULT_INIT_SCRIPT
 }
 
-pub async fn build_initramfs(args: BuildInitramfsArgs) -> Result<()> {
-    let busybox = tokio::fs::read(&args.busybox)
+pub async fn build_initramfs(config: BuildInitramfsConfig) -> Result<()> {
+    let busybox = tokio::fs::read(&config.busybox)
         .await
-        .with_context(|| format!("failed to read busybox from {}", args.busybox.display()))?;
+        .with_context(|| format!("failed to read busybox from {}", config.busybox.display()))?;
 
-    let init_script = match &args.init_script {
+    let init_script = match &config.init_script {
         Some(path) => tokio::fs::read_to_string(path)
             .await
             .with_context(|| format!("failed to read init script from {}", path.display()))?,
@@ -39,17 +44,17 @@ pub async fn build_initramfs(args: BuildInitramfsArgs) -> Result<()> {
         .file("bin/busybox", 0o755, &busybox)?
         .build();
 
-    if let Some(parent) = args.output.parent() {
+    if let Some(parent) = config.output.parent() {
         tokio::fs::create_dir_all(parent)
             .await
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
 
-    tokio::fs::write(&args.output, initramfs)
+    tokio::fs::write(&config.output, initramfs)
         .await
-        .with_context(|| format!("failed to write initramfs to {}", args.output.display()))?;
+        .with_context(|| format!("failed to write initramfs to {}", config.output.display()))?;
 
-    info!("initramfs written to {}", args.output.display());
+    info!("initramfs written to {}", config.output.display());
     Ok(())
 }
 
@@ -166,8 +171,8 @@ fn pad_to_4(bytes: &mut Vec<u8>) {
 
 #[allow(dead_code)]
 fn ensure_executable(path: &Path) -> Result<()> {
-    let metadata = fs::metadata(path)
-        .with_context(|| format!("failed to stat {}", path.display()))?;
+    let metadata =
+        fs::metadata(path).with_context(|| format!("failed to stat {}", path.display()))?;
     let mut permissions = metadata.permissions();
     permissions.set_mode(permissions.mode() | 0o111);
     fs::set_permissions(path, permissions)
@@ -182,8 +187,8 @@ fn write_debug_copy(path: &Path, contents: &[u8]) -> Result<()> {
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
 
-    let mut file = fs::File::create(path)
-        .with_context(|| format!("failed to create {}", path.display()))?;
+    let mut file =
+        fs::File::create(path).with_context(|| format!("failed to create {}", path.display()))?;
     file.write_all(contents)
         .with_context(|| format!("failed to write {}", path.display()))?;
     Ok(())
@@ -202,7 +207,10 @@ mod tests {
 
     #[test]
     fn normalizes_relative_paths() {
-        assert_eq!(normalize_cpio_path("bin/busybox".as_ref()).unwrap(), "bin/busybox");
+        assert_eq!(
+            normalize_cpio_path("bin/busybox".as_ref()).unwrap(),
+            "bin/busybox"
+        );
         assert_eq!(normalize_cpio_path("./tmp/".as_ref()).unwrap(), "tmp");
         assert!(normalize_cpio_path("../escape".as_ref()).is_err());
     }
@@ -221,4 +229,3 @@ mod tests {
         assert!(haystack.contains("070701"));
     }
 }
-

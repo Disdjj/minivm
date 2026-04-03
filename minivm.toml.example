@@ -1,0 +1,25 @@
+[serve]
+listen = "192.168.100.1:8080"
+
+[build]
+busybox = "/usr/bin/busybox"
+output = "out/initramfs.cpio"
+init_script = "guest/init"
+
+[launch]
+backend = "qemu"
+count = 3
+kernel = "/boot/vmlinuz-linux-guest"
+initramfs = "out/initramfs.cpio"
+workdir = "runtime"
+host_api = "http://192.168.100.1:8080/incr"
+bridge = "minivm0"
+subnet_base = "192.168.100.0"
+prefix_len = 24
+memory_mib = 128
+qemu_bin = "qemu-system-x86_64"
+machine = "microvm"
+accel = "kvm"
+tap_prefix = "mvm"
+skip_tap_setup = false
+keep_taps = false

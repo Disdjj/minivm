@@ -4,6 +4,8 @@ use std::process::Stdio;
 use anyhow::{Context, Result};
 use tokio::process::{Child, Command};
 
+use crate::backend::HypervisorBackend;
+
 /// Everything QEMU needs to know to boot one guest.
 ///
 /// The launcher computes these values once per VM and hands them to this
@@ -22,26 +24,46 @@ pub struct VmLaunchSpec {
     pub tap_name: String,
     pub mac_address: String,
     pub memory_mib: u32,
-    pub qemu_bin: String,
-    pub machine: String,
-    pub accel: String,
 }
 
-pub async fn spawn_vm(spec: &VmLaunchSpec) -> Result<Child> {
-    let mut command = build_command(spec);
-    tracing::info!("spawning {} via {:?}", spec.name, command);
-
-    command.spawn().with_context(|| {
-        format!(
-            "failed to spawn {} using {}",
-            spec.name,
-            spec.qemu_bin.as_str()
-        )
-    })
+#[derive(Debug, Clone)]
+pub struct QemuBackend {
+    qemu_bin: String,
+    machine: String,
+    accel: String,
 }
 
-fn build_command(spec: &VmLaunchSpec) -> Command {
-    let mut command = Command::new(&spec.qemu_bin);
+impl QemuBackend {
+    pub fn new(qemu_bin: String, machine: String, accel: String) -> Self {
+        Self {
+            qemu_bin,
+            machine,
+            accel,
+        }
+    }
+}
+
+impl HypervisorBackend for QemuBackend {
+    fn name(&self) -> &'static str {
+        "qemu"
+    }
+
+    fn spawn_vm(&self, spec: &VmLaunchSpec) -> Result<Child> {
+        let mut command = build_command(self, spec);
+        tracing::info!("spawning {} via {:?}", spec.name, command);
+
+        command.spawn().with_context(|| {
+            format!(
+                "failed to spawn {} using {}",
+                spec.name,
+                self.qemu_bin.as_str()
+            )
+        })
+    }
+}
+
+fn build_command(backend: &QemuBackend, spec: &VmLaunchSpec) -> Command {
+    let mut command = Command::new(&backend.qemu_bin);
 
     command
         .arg("-name")
@@ -73,7 +95,7 @@ fn build_command(spec: &VmLaunchSpec) -> Command {
         .arg("-device")
         .arg(format!(
             "{},netdev=net0,mac={}",
-            net_device_model(spec),
+            net_device_model(&backend.machine),
             spec.mac_address
         ))
         .stdin(Stdio::null())
@@ -83,18 +105,18 @@ fn build_command(spec: &VmLaunchSpec) -> Command {
     // The microvm machine removes most legacy PC hardware, which is exactly the
     // spirit we want here. The extra flags keep an ISA serial port available so
     // that `console=ttyS0` still gives us guest logs.
-    if spec.machine == "microvm" {
+    if backend.machine == "microvm" {
         command.arg("-machine").arg(format!(
             "{},accel={},pit=off,pic=off,rtc=off,isa-serial=on",
-            spec.machine, spec.accel
+            backend.machine, backend.accel
         ));
     } else {
         command
             .arg("-machine")
-            .arg(format!("{},accel={}", spec.machine, spec.accel));
+            .arg(format!("{},accel={}", backend.machine, backend.accel));
     }
 
-    if spec.accel == "kvm" {
+    if backend.accel == "kvm" {
         command.arg("-cpu").arg("host");
     }
 
@@ -108,8 +130,8 @@ fn kernel_cmdline(spec: &VmLaunchSpec) -> String {
     )
 }
 
-fn net_device_model(spec: &VmLaunchSpec) -> &'static str {
-    if spec.machine == "microvm" {
+fn net_device_model(machine: &str) -> &'static str {
+    if machine == "microvm" {
         "virtio-net-device"
     } else {
         "virtio-net-pci"
@@ -136,9 +158,6 @@ mod tests {
             tap_name: "mvm7".into(),
             mac_address: "02:fc:00:00:00:07".into(),
             memory_mib: 128,
-            qemu_bin: "qemu-system-x86_64".into(),
-            machine: "microvm".into(),
-            accel: "kvm".into(),
         };
 
         let cmdline = kernel_cmdline(&spec);
@@ -149,25 +168,7 @@ mod tests {
 
     #[test]
     fn picks_net_device_model_from_machine_type() {
-        let mut spec = VmLaunchSpec {
-            id: 0,
-            name: "vm0".into(),
-            kernel: PathBuf::from("bzImage"),
-            initramfs: PathBuf::from("initramfs.cpio"),
-            serial_log: PathBuf::from("vm0.log"),
-            host_api: "http://192.168.100.1:8080/incr".into(),
-            guest_ip_cidr: "192.168.100.2/24".into(),
-            gateway: "192.168.100.1".into(),
-            tap_name: "mvm0".into(),
-            mac_address: "02:fc:00:00:00:00".into(),
-            memory_mib: 128,
-            qemu_bin: "qemu-system-x86_64".into(),
-            machine: "microvm".into(),
-            accel: "kvm".into(),
-        };
-
-        assert_eq!(net_device_model(&spec), "virtio-net-device");
-        spec.machine = "q35".into();
-        assert_eq!(net_device_model(&spec), "virtio-net-pci");
+        assert_eq!(net_device_model("microvm"), "virtio-net-device");
+        assert_eq!(net_device_model("q35"), "virtio-net-pci");
     }
 }
