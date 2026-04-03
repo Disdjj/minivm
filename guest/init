@@ -1,0 +1,98 @@
+#!/bin/busybox sh
+
+# This is the whole guest workload for the first MVP. The kernel runs /init
+# directly from the initramfs, so we can avoid building a disk image entirely.
+set -eu
+
+export PATH=/bin
+
+log() {
+  echo "[minivm-init] $*"
+}
+
+# Kernel command line parsing is deliberately simple here: every minivm.* value
+# is a plain key=value token with no spaces.
+read_arg() {
+  key="$1"
+  for arg in $(cat /proc/cmdline); do
+    case "$arg" in
+      "$key"=*)
+        echo "${arg#*=}"
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+mount_early_filesystems() {
+  # proc/sys are required for both debugging and command line parsing.
+  /bin/busybox mount -t proc proc /proc
+  /bin/busybox mount -t sysfs sysfs /sys
+
+  # devtmpfs gives us /dev/console, /dev/null, and friends without needing to
+  # pre-create device nodes inside the initramfs archive.
+  /bin/busybox mount -t devtmpfs devtmpfs /dev || true
+}
+
+configure_network() {
+  guest_ip="$1"
+  gateway="$2"
+
+  /bin/busybox ip link set lo up
+  /bin/busybox ip link set eth0 up
+  /bin/busybox ip addr add "$guest_ip" dev eth0
+  /bin/busybox ip route add default via "$gateway"
+}
+
+call_host_api() {
+  url="$1"
+
+  # A tiny retry loop is enough to hide short races between guest boot and the
+  # host API becoming reachable on the bridge.
+  attempt=1
+  while [ "$attempt" -le 5 ]; do
+    if response=$(/bin/busybox wget -T 5 -qO- "$url"); then
+      log "host API response: $response"
+      return 0
+    fi
+
+    log "request attempt $attempt failed"
+    attempt=$((attempt + 1))
+    /bin/busybox sleep 1
+  done
+
+  return 1
+}
+
+main() {
+  mount_early_filesystems
+
+  vm_id="$(read_arg minivm.id || echo unknown)"
+  guest_ip="$(read_arg minivm.guest_ip || true)"
+  gateway="$(read_arg minivm.gateway || true)"
+  host_api="$(read_arg minivm.host_api || true)"
+
+  log "booted guest id=$vm_id"
+
+  if [ -z "$guest_ip" ] || [ -z "$gateway" ] || [ -z "$host_api" ]; then
+    log "missing required kernel args"
+    exec /bin/busybox sh
+  fi
+
+  configure_network "$guest_ip" "$gateway"
+  log "configured eth0 with $guest_ip via $gateway"
+
+  if call_host_api "$host_api"; then
+    log "request completed successfully"
+  else
+    log "host API request failed"
+  fi
+
+  log "powering off"
+  exec /bin/busybox poweroff -f
+}
+
+main "$@"
+
