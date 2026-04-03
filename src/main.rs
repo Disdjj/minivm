@@ -4,9 +4,11 @@ mod config;
 mod counter_api;
 mod doctor;
 mod guest;
+mod kvm;
 mod launcher;
 mod net;
 mod qemu;
+mod wizard;
 
 use std::process::ExitCode;
 

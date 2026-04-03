@@ -22,9 +22,11 @@ Read order:
 Current status:
 
 - The repository implements a Linux-first microVM MVP.
-- The current backend is QEMU with optional KVM acceleration, not a custom VMM.
+- The only backend that can boot guests today is QEMU with optional KVM acceleration.
+- A first `kvm` backend scaffold now exists for host probing and backend integration, but it does not boot guests yet.
 - The validated workflow is: host counter API up, initramfs generated, `N` guests launched, each guest performs one HTTP request to `/incr`, guests exit.
 - The CLI now supports optional `minivm.toml` configuration loading and a `doctor` command for environment checks.
+- The CLI now also supports an interactive `init` wizard for generating `minivm.toml`.
 
 Key source files:
 
@@ -35,8 +37,10 @@ Key source files:
 - `src/counter_api.rs`
 - `src/doctor.rs`
 - `src/guest.rs`
+- `src/kvm.rs`
 - `src/net.rs`
 - `src/qemu.rs`
+- `src/wizard.rs`
 - `src/launcher.rs`
 - `guest/init`
 - `minivm.toml.example`

@@ -4,12 +4,13 @@ This document describes the current end-to-end execution path.
 
 Host startup sequence:
 
-1. `src/config.rs` optionally loads `minivm.toml` and exposes shared defaults to every CLI subcommand.
-2. `minivm doctor` in `src/doctor.rs` can validate the host before launch.
-3. `minivm serve` in `src/counter_api.rs` binds an HTTP listener and exposes `/healthz`, `/count`, and `/incr`.
-4. `scripts/linux_setup_bridge.sh` creates a Linux bridge and assigns the host-side bridge address.
-5. `minivm build-initramfs` in `src/guest.rs` packages `guest/init` and a BusyBox binary into a `newc` cpio archive.
-6. `minivm launch` in `src/launcher.rs` resolves effective launch settings, creates the runtime work directory, computes network allocations, creates TAP interfaces, and asks the configured backend to spawn one guest process per VM.
+1. `minivm init` in `src/wizard.rs` can interactively generate `minivm.toml`.
+2. `src/config.rs` optionally loads `minivm.toml` and exposes shared defaults to every CLI subcommand.
+3. `minivm doctor` in `src/doctor.rs` can validate the host before launch.
+4. `minivm serve` in `src/counter_api.rs` binds an HTTP listener and exposes `/healthz`, `/count`, and `/incr`.
+5. `scripts/linux_setup_bridge.sh` creates a Linux bridge and assigns the host-side bridge address.
+6. `minivm build-initramfs` in `src/guest.rs` packages `guest/init` and a BusyBox binary into a `newc` cpio archive.
+7. `minivm launch` in `src/launcher.rs` resolves effective launch settings, creates the runtime work directory, computes network allocations, creates TAP interfaces, and asks the configured backend to spawn one guest runtime per VM.
 
 Per-guest launch path:
 
@@ -20,6 +21,12 @@ Per-guest launch path:
    `-kernel`, `-initrd`, `-m`, `-smp 1`, a serial log file, one TAP-backed network device, and kernel command line keys under the `minivm.*` namespace.
 5. The QEMU kernel command line provides:
    `minivm.id`, `minivm.guest_ip`, `minivm.gateway`, and `minivm.host_api`.
+
+KVM scaffold path:
+
+1. `src/kvm.rs` can open `/dev/kvm`, query the KVM API version, and attempt `KVM_CREATE_VM`.
+2. `src/doctor.rs` uses that probe to validate whether the host can support a future self-hosted KVM backend.
+3. `launch --backend kvm` is intentionally not a working runtime path yet; it fails after successful probing because kernel loading, vCPU creation, and device wiring are not implemented.
 
 Guest boot path:
 
@@ -33,7 +40,7 @@ Guest boot path:
 Host verification path:
 
 1. `src/counter_api.rs` increments an `AtomicU64` on `/incr`.
-2. `src/launcher.rs` waits for all QEMU child processes to exit.
+2. `src/launcher.rs` waits for all backend-provided running-VM handles to complete.
 3. Per-VM serial logs are written to the launch work directory.
 4. `/count` should equal the number of guests that completed the request path successfully.
 

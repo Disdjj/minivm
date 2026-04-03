@@ -4,7 +4,7 @@ use std::process::Stdio;
 use anyhow::{Context, Result};
 use tokio::process::{Child, Command};
 
-use crate::backend::HypervisorBackend;
+use crate::backend::{HypervisorBackend, RunningVm};
 
 /// Everything QEMU needs to know to boot one guest.
 ///
@@ -48,16 +48,51 @@ impl HypervisorBackend for QemuBackend {
         "qemu"
     }
 
-    fn spawn_vm(&self, spec: &VmLaunchSpec) -> Result<Child> {
+    fn spawn_vm(&self, spec: &VmLaunchSpec) -> Result<Box<dyn RunningVm>> {
         let mut command = build_command(self, spec);
         tracing::info!("spawning {} via {:?}", spec.name, command);
 
-        command.spawn().with_context(|| {
+        let child = command.spawn().with_context(|| {
             format!(
                 "failed to spawn {} using {}",
                 spec.name,
                 self.qemu_bin.as_str()
             )
+        })?;
+
+        Ok(Box::new(QemuRunningVm {
+            name: spec.name.clone(),
+            child,
+        }))
+    }
+}
+
+struct QemuRunningVm {
+    name: String,
+    child: Child,
+}
+
+impl RunningVm for QemuRunningVm {
+    fn label(&self) -> String {
+        self.name.clone()
+    }
+
+    fn wait(
+        self: Box<Self>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>> {
+        Box::pin(async move {
+            let mut running = *self;
+            let status = running
+                .child
+                .wait()
+                .await
+                .with_context(|| format!("failed while waiting for {}", running.name))?;
+
+            if !status.success() {
+                anyhow::bail!("{} exited with status {status}", running.name);
+            }
+
+            Ok(())
         })
     }
 }

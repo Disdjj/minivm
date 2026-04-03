@@ -6,6 +6,11 @@ Binary:
 
 Subcommands:
 
+- `init`
+  Source of truth: `src/cli.rs`, `src/wizard.rs`, `src/config.rs`
+  Purpose: generate a config file interactively.
+  Important arguments: `--output`, `--force`
+
 - `serve`
   Source of truth: `src/cli.rs`, `src/counter_api.rs`
   Purpose: start the host-side counter API.
@@ -17,7 +22,7 @@ Subcommands:
   Important arguments: `--busybox`, `--output`, `--init-script`
 
 - `launch`
-  Source of truth: `src/cli.rs`, `src/launcher.rs`, `src/backend.rs`, `src/qemu.rs`
+  Source of truth: `src/cli.rs`, `src/launcher.rs`, `src/backend.rs`, `src/qemu.rs`, `src/kvm.rs`
   Purpose: create TAP devices, select the configured backend, start `N` guests, and wait for them to exit.
   Important arguments:
   `--count`
@@ -47,12 +52,15 @@ Subcommands:
 
 Current semantics:
 
+- `init` writes a TOML config file using interactive terminal prompts.
+- `init` pre-fills values from the current loaded config and from common host defaults when possible.
 - `serve` keeps all state in memory. Counter state resets on process restart.
 - `build-initramfs` emits an uncompressed `newc` cpio archive.
 - A global `--config` flag can load defaults from `minivm.toml`.
 - `launch` uses one vCPU per guest.
 - `launch` resolves config-file defaults first and then applies CLI overrides.
-- `launch` currently supports only the `qemu` backend.
+- `launch` supports `qemu` as the working backend.
+- `launch` recognizes `kvm`, but that backend currently stops after host probing and returns a not-implemented error.
 - `launch` uses one QEMU process per guest when the backend is `qemu`.
 - `launch` deletes created TAP devices on exit unless `--keep-taps` is set.
 - `launch` writes one serial log file per guest under the work directory.

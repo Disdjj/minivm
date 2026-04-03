@@ -5,6 +5,7 @@ use anyhow::{Result, bail};
 use which::which;
 
 use crate::config::LoadedConfig;
+use crate::kvm;
 
 #[derive(Debug, Clone)]
 pub struct DoctorConfig {
@@ -71,6 +72,7 @@ fn collect_checks(config: &LoadedConfig) -> Vec<Check> {
     let launch = &config.data.launch;
     let build = &config.data.build;
     let serve = &config.data.serve;
+    let backend = launch.backend.clone().unwrap_or_else(|| "qemu".to_owned());
 
     checks.push(if cfg!(target_os = "linux") {
         pass("host OS", format!("linux ({})", std::env::consts::ARCH))
@@ -90,16 +92,30 @@ fn collect_checks(config: &LoadedConfig) -> Vec<Check> {
         Err(_) => fail("iproute2", "`ip` command not found".to_owned()),
     });
 
-    let qemu_bin = launch
-        .qemu_bin
-        .clone()
-        .unwrap_or_else(|| "qemu-system-x86_64".to_owned());
-    checks.push(command_check("qemu", &qemu_bin));
+    checks.push(match backend.as_str() {
+        "qemu" => pass("launch.backend", "qemu".to_owned()),
+        "kvm" => warn(
+            "launch.backend",
+            "kvm is scaffolded; host probing exists but guest boot is not implemented yet"
+                .to_owned(),
+        ),
+        other => fail("launch.backend", format!("unsupported backend `{other}`")),
+    });
+
+    if backend == "qemu" {
+        let qemu_bin = launch
+            .qemu_bin
+            .clone()
+            .unwrap_or_else(|| "qemu-system-x86_64".to_owned());
+        checks.push(command_check("qemu", &qemu_bin));
+    }
 
     let accel = launch.accel.clone().unwrap_or_else(|| "kvm".to_owned());
-    if accel == "kvm" {
+    if backend == "kvm" || accel == "kvm" {
         checks.extend(kvm_checks());
-    } else {
+    }
+
+    if backend == "qemu" && accel != "kvm" {
         checks.push(warn(
             "acceleration",
             format!("configured accel is `{accel}`, so /dev/kvm is not required"),
@@ -153,21 +169,31 @@ fn collect_checks(config: &LoadedConfig) -> Vec<Check> {
 }
 
 fn kvm_checks() -> Vec<Check> {
-    let mut checks = Vec::new();
     let path = Path::new("/dev/kvm");
 
     if !path.exists() {
-        checks.push(fail("/dev/kvm", "device does not exist".to_owned()));
-        return checks;
+        return vec![fail("/dev/kvm", "device does not exist".to_owned())];
     }
 
-    checks.push(pass("/dev/kvm", path.display().to_string()));
-
+    let mut checks = vec![pass("/dev/kvm", path.display().to_string())];
     let access = OpenOptions::new().read(true).write(true).open(path);
-    checks.push(match access {
+    checks.push(match &access {
         Ok(_) => pass("kvm access", "read/write open succeeded".to_owned()),
         Err(error) => fail("kvm access", error.to_string()),
     });
+
+    if access.is_ok() {
+        match kvm::probe_host() {
+            Ok(info) => {
+                checks.push(pass("kvm api version", info.api_version.to_string()));
+                checks.push(match info.vm_creation_error {
+                    Some(error) => fail("kvm create vm", error),
+                    None => pass("kvm create vm", "KVM_CREATE_VM succeeded".to_owned()),
+                });
+            }
+            Err(error) => checks.push(fail("kvm probe", format!("{error:#}"))),
+        }
+    }
 
     checks
 }

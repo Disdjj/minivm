@@ -2,7 +2,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 const DEFAULT_CONFIG_PATH: &str = "minivm.toml";
 
@@ -12,7 +12,7 @@ pub struct LoadedConfig {
     pub data: FileConfig,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct FileConfig {
     #[serde(default)]
     pub serve: ServeFileConfig,
@@ -22,19 +22,19 @@ pub struct FileConfig {
     pub launch: LaunchFileConfig,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct ServeFileConfig {
     pub listen: Option<SocketAddr>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct BuildFileConfig {
     pub busybox: Option<PathBuf>,
     pub output: Option<PathBuf>,
     pub init_script: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct LaunchFileConfig {
     pub backend: Option<String>,
     pub count: Option<usize>,
@@ -52,6 +52,18 @@ pub struct LaunchFileConfig {
     pub tap_prefix: Option<String>,
     pub skip_tap_setup: Option<bool>,
     pub keep_taps: Option<bool>,
+}
+
+pub fn default_config_path() -> &'static Path {
+    Path::new(DEFAULT_CONFIG_PATH)
+}
+
+pub fn write_to_path(path: &Path, config: &FileConfig) -> Result<()> {
+    let serialized =
+        toml::to_string_pretty(config).context("failed to serialize config as TOML")?;
+    std::fs::write(path, serialized)
+        .with_context(|| format!("failed to write config to {}", path.display()))?;
+    Ok(())
 }
 
 pub fn load(path: Option<&Path>) -> Result<LoadedConfig> {

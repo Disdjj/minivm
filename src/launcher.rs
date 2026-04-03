@@ -3,10 +3,9 @@ use std::path::PathBuf;
 use std::process::Command as StdCommand;
 
 use anyhow::{Context, Result, bail};
-use tokio::process::Child;
 use tracing::{info, warn};
 
-use crate::backend::build_backend;
+use crate::backend::{RunningVm, build_backend};
 use crate::net::NetworkPlan;
 use crate::qemu::VmLaunchSpec;
 
@@ -43,7 +42,7 @@ pub async fn launch(config: LaunchConfig) -> Result<()> {
         .await
         .with_context(|| format!("failed to create {}", config.workdir.display()))?;
 
-    let mut children = Vec::with_capacity(config.count);
+    let mut running_vms = Vec::with_capacity(config.count);
     let mut created_taps = Vec::new();
 
     for id in 0..config.count {
@@ -72,16 +71,16 @@ pub async fn launch(config: LaunchConfig) -> Result<()> {
             memory_mib: config.memory_mib,
         };
 
-        children.push(backend.spawn_vm(&spec)?);
+        running_vms.push(backend.spawn_vm(&spec)?);
     }
 
     info!(
         "spawned {} guests with backend {}",
-        children.len(),
+        running_vms.len(),
         backend.name()
     );
 
-    let wait_result = wait_for_children(children).await;
+    let wait_result = wait_for_vms(running_vms).await;
 
     if !config.keep_taps {
         for tap in created_taps {
@@ -94,18 +93,11 @@ pub async fn launch(config: LaunchConfig) -> Result<()> {
     wait_result
 }
 
-async fn wait_for_children(mut children: Vec<Child>) -> Result<()> {
-    for (index, child) in children.iter_mut().enumerate() {
-        let status = child
-            .wait()
-            .await
-            .with_context(|| format!("failed while waiting for guest {index}"))?;
-
-        if !status.success() {
-            bail!("guest {index} exited with status {status}");
-        }
-
-        info!("guest {index} exited cleanly");
+async fn wait_for_vms(running_vms: Vec<Box<dyn RunningVm>>) -> Result<()> {
+    for vm in running_vms {
+        let label = vm.label();
+        vm.wait().await?;
+        info!("{label} exited cleanly");
     }
 
     Ok(())

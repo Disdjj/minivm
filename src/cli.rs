@@ -9,6 +9,7 @@ use crate::counter_api;
 use crate::doctor;
 use crate::guest;
 use crate::launcher;
+use crate::wizard;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
@@ -24,6 +25,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Start an interactive wizard and write a minivm config file.
+    Init(InitArgs),
     /// Run the host-side API that increments a shared counter.
     Serve(ServeArgs),
     /// Build a tiny initramfs containing BusyBox plus the guest /init script.
@@ -99,7 +102,8 @@ pub struct LaunchArgs {
     #[arg(long)]
     pub memory_mib: Option<u32>,
 
-    /// Hypervisor backend. Only `qemu` is currently implemented.
+    /// Hypervisor backend. `qemu` is the working backend. `kvm` is currently a
+    /// scaffold that can probe /dev/kvm but does not boot guests yet.
     #[arg(long)]
     pub backend: Option<String>,
 
@@ -137,11 +141,29 @@ pub struct DoctorArgs {
     pub strict: bool,
 }
 
+#[derive(Debug, Clone, Args)]
+pub struct InitArgs {
+    /// Path to write the generated config file to.
+    #[arg(long)]
+    pub output: Option<PathBuf>,
+
+    /// Overwrite an existing config file without asking.
+    #[arg(long, default_value_t = false)]
+    pub force: bool,
+}
+
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
     let loaded_config = crate::config::load(cli.config.as_deref())?;
 
     match cli.command {
+        Command::Init(args) => wizard::run(wizard::WizardConfig {
+            output: args
+                .output
+                .unwrap_or_else(|| crate::config::default_config_path().to_path_buf()),
+            force: args.force,
+            loaded_config,
+        }),
         Command::Serve(args) => counter_api::serve(resolve_serve(args, &loaded_config)?).await,
         Command::BuildInitramfs(args) => {
             guest::build_initramfs(resolve_build_initramfs(args, &loaded_config)?).await

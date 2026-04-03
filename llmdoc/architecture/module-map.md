@@ -13,6 +13,10 @@ Entrypoint:
   Loads optional TOML configuration from `minivm.toml`.
   Owns the file format for shared defaults.
 
+- `src/wizard.rs`
+  Implements the interactive terminal setup flow.
+  Owns prompt defaults, backend selection UI, and writing `minivm.toml`.
+
 Host services:
 
 - `src/counter_api.rs`
@@ -48,10 +52,15 @@ Hypervisor backend:
 - `src/backend.rs`
   Defines the backend abstraction and backend factory.
   This is the new seam between orchestration and hypervisor implementation.
+  It now owns the generic running-VM handle used by launcher.
 
 - `src/qemu.rs`
   Implements the current `qemu` backend and translates per-guest launch specifications into a QEMU command line.
   This module should be replaceable without changing CLI or orchestration behavior.
+
+- `src/kvm.rs`
+  Implements the first self-hosted KVM probe and backend scaffold.
+  Owns `/dev/kvm` probing and the current explicit "not bootable yet" behavior for the `kvm` backend.
 
 Operational helpers:
 
@@ -67,4 +76,5 @@ Operational helpers:
 Replacement strategy:
 
 - Keep `src/cli.rs`, `src/config.rs`, `src/counter_api.rs`, `src/doctor.rs`, `src/net.rs`, `src/launcher.rs`, and `guest/init` stable if possible.
-- Treat `src/backend.rs` as the replacement seam and `src/qemu.rs` as the current implementation behind that seam.
+- Treat `src/backend.rs` as the replacement seam.
+- Treat `src/qemu.rs` as the current working backend and `src/kvm.rs` as the in-progress self-hosted backend.

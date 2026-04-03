@@ -14,10 +14,16 @@ This repository does **not** implement a full Firecracker-like VMM yet. The firs
 - `serve`: a small counter API with `/incr`, `/count`, and `/healthz`
 - `build-initramfs`: packages a BusyBox binary and the guest `/init` script into a Linux initramfs
 - `launch`: spawns `N` QEMU guests, allocates deterministic TAP/IP/MAC values, and waits for all guests to finish
+- `init`: interactive terminal wizard for generating `minivm.toml`
 - `doctor`: validates the current host and configuration before launch
 - `guest/init`: the guest workload that configures `eth0`, calls the host API, and powers off
 - `scripts/linux_setup_bridge.sh`: helper for creating a host bridge used by the TAP interfaces
 - `minivm.toml.example`: example config file for storing shared defaults
+
+## Backend Status
+
+- `qemu`: working backend used for the current end-to-end MVP
+- `kvm`: first self-hosted backend scaffold; it currently probes `/dev/kvm` and reserves the backend seam, but it does not boot guests yet
 
 ## Host Requirements
 
@@ -39,7 +45,13 @@ The current development machine for this repo is macOS/arm64, so the repository 
 cargo build
 ```
 
-2. Copy the example config if you want stable defaults:
+2. Generate a config file with the interactive wizard:
+
+```bash
+cargo run -- init
+```
+
+If you prefer a static template instead:
 
 ```bash
 cp minivm.toml.example minivm.toml
@@ -99,5 +111,7 @@ The expected result is:
 - Guests use one vCPU and a small amount of RAM because the only workload is a single HTTP request.
 - The initramfs is intentionally tiny. There is no root disk and no block device in this first cut.
 - TAP setup is done on the host so that each guest gets a normal `virtio-net` device connected to the bridge.
-- QEMU is wrapped behind a backend trait. That keeps the orchestration logic reusable when we replace QEMU with a custom KVM-based backend later.
+- The launcher now works through a backend trait that returns a generic running-VM handle rather than a raw process handle. This is the seam intended for the future in-process KVM VMM.
+- QEMU remains the only backend that can boot guests today.
 - Shared defaults can live in `minivm.toml`, while command-line flags still override them.
+- `init` is meant to be the easiest on-ramp for repeated local experiments; it pre-fills prompts from the current config file and from common host defaults when possible.

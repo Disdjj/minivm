@@ -18,7 +18,7 @@ Prerequisites:
 
 Recommended sequence:
 
-1. Optionally copy `minivm.toml.example` to `minivm.toml` and fill in local paths.
+1. Prefer `minivm init` to generate `minivm.toml` interactively. If needed, use `minivm.toml.example` as a static template instead.
 2. Build the project with `cargo build`.
 3. Run `minivm doctor`.
 4. Create the bridge with `scripts/linux_setup_bridge.sh`.
@@ -38,6 +38,7 @@ Typical values:
 
 Verification checklist:
 
+- `minivm init` produces a config file with the expected local paths and network values.
 - `minivm doctor` reports no hard failures for the chosen backend and acceleration mode.
 - `GET /healthz` returns `ok`.
 - `GET /count` returns `0` before launch.
@@ -58,3 +59,6 @@ Common failure cases:
 
 - Guest cannot reach the host API
   Confirm the bridge exists, the host API is bound to the bridge address, and the guest subnet matches the bridge subnet.
+
+- `launch --backend kvm` fails after probing
+  This is currently expected. The `kvm` backend is only a scaffold and does not boot guests yet.
